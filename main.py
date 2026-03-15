@@ -10,6 +10,8 @@ import sys
 import time
 import traceback
 import logging
+import os
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from concurrent.futures import ThreadPoolExecutor
 
 from config import (
@@ -345,6 +347,27 @@ def _shop_cleanup():
 
 
 # ════════════════════════════════════════════════════════════════
+#  HEALTH CHECK (Railway требует HTTP на $PORT)
+# ════════════════════════════════════════════════════════════════
+
+class _HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"OK")
+
+    def log_message(self, *args):
+        pass  # не засорять логи
+
+
+def _start_health_server():
+    port = int(os.environ.get("PORT", 8080))
+    server = HTTPServer(("0.0.0.0", port), _HealthHandler)
+    log.info(f"Health-check server on port {port}")
+    server.serve_forever()
+
+
+# ════════════════════════════════════════════════════════════════
 #  ЗАПУСК
 # ════════════════════════════════════════════════════════════════
 
@@ -366,20 +389,23 @@ def run_polling():
                 timeout=30,
                 long_polling_timeout=30,
                 allowed_updates=["message", "callback_query", "my_chat_member"],
-                logger_level=None,   # подавляем дублирующиеся ошибки внутри telebot
+                logger_level=None,
             )
             backoff = 5
         except ApiTelegramException as e:
             if e.error_code == 401:
-                # Невалидный токен или SESSION_REVOKED — ретрай бессмысленен
                 log.critical(
                     f"❌ BOT TOKEN INVALID (401): {e.description}\n"
-                    f"Причина: либо неверный BOT_TOKEN в Railway, "
-                    f"либо одновременно запущен второй экземпляр бота!\n"
+                    f"Причина: неверный BOT_TOKEN или запущен второй экземпляр!\n"
                     f"Остановка."
                 )
                 _shutdown.set()
                 break
+            if e.error_code == 409:
+                # Конфликт — другой экземпляр ещё не умер, ждём дольше
+                log.warning(f"⚠️ 409 Conflict: другой экземпляр ещё работает. Жду 15 сек...")
+                _shutdown.wait(15)
+                continue
             log.error(f"Telegram API error {e.error_code}: {e.description}")
             if _shutdown.is_set():
                 break
@@ -396,6 +422,9 @@ def run_polling():
 
 
 if __name__ == "__main__":
+    # Health-check сервер для Railway (должен быть первым!)
+    threading.Thread(target=_start_health_server, daemon=True, name="health").start()
+
     # Запуск фоновых потоков
     threads = [
         threading.Thread(target=_stage_loop,    daemon=True, name="stage_loop"),
@@ -409,7 +438,6 @@ if __name__ == "__main__":
     signal.signal(signal.SIGINT,  graceful_shutdown)
     signal.signal(signal.SIGTERM, graceful_shutdown)
 
-    import os
     gif_count = len([f for f in os.listdir(GIF_DIR) if f.lower().endswith(".gif")]) if os.path.isdir(GIF_DIR) else 0
     from ai.client import is_enabled, get_status
 
@@ -429,3 +457,4 @@ if __name__ == "__main__":
     print("╚══════════════════════════════════════════════════════╝")
 
     run_polling()
+
