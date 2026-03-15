@@ -581,57 +581,64 @@ def handle_start(msg, uid: int, admins: set, pool=None):
             invite_code = param
 
     def _do_start(_uid=uid, _uname=uname, _invite=invite_code):
-        time.sleep(0.3)
-        # Очищаем старые данные
-        from database import cancel_user_attacks
-        cancel_user_attacks(_uid)
-        from games.dm_games import has_game, clear_game
-        if has_game(_uid):
-            clear_game(_uid)
+        try:
+            time.sleep(0.3)
+            # Создаём пользователя если нет
+            get_user(_uid)
 
-        # Сбрасываем профиль
-        with get_conn() as conn:
-            conn.execute("""
-                UPDATE users SET
-                    name=NULL, age=NULL, city=NULL, interests='[]',
-                    job=NULL, fear=NULL, pet=NULL,
-                    lang_pair='ru|en', stage=0, msg_count=0,
-                    horror_active=0, stopped=0, muted=0,
-                    ai_mode=0, translate_mode=0
-                WHERE uid=?
-            """, (_uid,))
-            conn.commit()
+            # Очищаем старые данные
+            from database import cancel_user_attacks
+            cancel_user_attacks(_uid)
+            from games.dm_games import has_game, clear_game
+            if has_game(_uid):
+                clear_game(_uid)
 
-        u = get_user(_uid)
-        if _uname:
-            update_user_field(_uid, "username", _uname)
+            # Сбрасываем профиль
+            with get_conn() as conn:
+                conn.execute("""
+                    UPDATE users SET
+                        name=NULL, age=NULL, city=NULL, interests='[]',
+                        job=NULL, fear=NULL, pet=NULL,
+                        lang_pair='ru|en', stage=0, msg_count=0,
+                        horror_active=0, stopped=0, muted=0,
+                        ai_mode=0, translate_mode=0
+                    WHERE uid=?
+                """, (_uid,))
+                conn.commit()
 
-        # Автоопределение имени из Telegram
-        first_name = msg.from_user.first_name
-        if first_name and len(first_name) >= 2:
-            fn_clean = re.sub(r'[^\w\-]', '', first_name).strip()
-            if fn_clean and fn_clean.isalpha():
-                update_user_field(_uid, "name", fn_clean.capitalize())
+            u = get_user(_uid)
+            if _uname:
+                update_user_field(_uid, "username", _uname)
 
-        update_user_field(_uid, "stopped", 0)
-        update_user_field(_uid, "muted", 0)
+            # Автоопределение имени из Telegram
+            first_name = msg.from_user.first_name
+            if first_name and len(first_name) >= 2:
+                fn_clean = re.sub(r'[^\w\-]', '', first_name).strip()
+                if fn_clean and fn_clean.isalpha():
+                    update_user_field(_uid, "name", fn_clean.capitalize())
 
-        send(_uid,
-            "Привет! 🌍 Я бот-переводчик.\n\n"
-            "Напиши любой текст — переведу!\n"
-            "По умолчанию: Русский → Английский\n\n"
-            "Также умею:\n"
-            "🌤 Показывать погоду\n"
-            "🎮 Игры: RPG, истории, квесты, мафия\n"
-            "🤖 ИИ-диалог\n"
-            "🔮 Предсказания, 📖 Факты, 🧠 Викторина\n\n"
-            "Нажми кнопку или напиши текст 😊",
-            kb=main_kb(0))
+            update_user_field(_uid, "stopped", 0)
+            update_user_field(_uid, "muted", 0)
 
-        # Обрабатываем invite
-        if _invite:
-            from social.friends import process_invite
-            process_invite(_uid, _invite, pool)
+            send(_uid,
+                "Привет! 🌍 Я бот-переводчик.\n\n"
+                "Напиши любой текст — переведу!\n"
+                "По умолчанию: Русский → Английский\n\n"
+                "Также умею:\n"
+                "🌤 Показывать погоду\n"
+                "🎮 Игры: RPG, истории, квесты, мафия\n"
+                "🤖 ИИ-диалог\n"
+                "🔮 Предсказания, 📖 Факты, 🧠 Викторина\n\n"
+                "Нажми кнопку или напиши текст 😊",
+                kb=main_kb(0))
+
+            # Обрабатываем invite
+            if _invite:
+                from social.friends import process_invite
+                process_invite(_uid, _invite, pool)
+        except Exception:
+            import traceback
+            log.error(f"handle_start crashed:\n{traceback.format_exc()}")
 
     if pool:
         pool.submit(_do_start)
