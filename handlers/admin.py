@@ -226,6 +226,17 @@ def _handle_admin_inner(msg, admin_uid: int, admins: set):
         send(admin_uid, "👁 Вышел из god-mode.", kb=main_kb(u.get("stage", 0)))
         return
 
+    # ── Жертвы (список) ───────────────────────────────────────────
+    if text == "👥 Жертвы":
+        all_victims = [u for u in get_all_users() if u["uid"] not in admins and not u.get("banned")]
+        all_victims.sort(key=lambda x: x.get("score", 0), reverse=True)
+        if not all_victims:
+            send(admin_uid, "❌ Нет жертв.", kb=admin_main_kb()); return
+        lines = [f"ID:{u['uid']} — {u.get('name','?')} @{u.get('username','?')} ст.{u.get('stage',0)} очк.{u.get('score',0)}"
+                 for u in all_victims[:30]]
+        send(admin_uid, "👥 ЖЕРТВЫ:\n\n" + "\n".join(lines), kb=admin_main_kb())
+        return
+
     # ── Выбор жертвы ──────────────────────────────────────────────
     if text == "⚙️ Выбрать жертву":
         all_victims = [u for u in get_all_users() if u["uid"] not in admins and not u.get("banned")]
@@ -314,6 +325,18 @@ def _handle_admin_inner(msg, admin_uid: int, admins: set):
     if text == "🏆 Лидеры":
         from games.dm_games import get_leaderboard_text
         send(admin_uid, get_leaderboard_text(), kb=admin_main_kb())
+        return
+
+    if text == "🎬 Сценарии":
+        from horror.engine import list_scenarios
+        try:
+            names = list_scenarios()
+            if names:
+                send(admin_uid, "🎬 Доступные сценарии:\n\n" + "\n".join(f"• {n}" for n in names), kb=admin_main_kb())
+            else:
+                send(admin_uid, "🎬 Нет сохранённых сценариев.", kb=admin_main_kb())
+        except Exception:
+            send(admin_uid, "🎬 Функция сценариев недоступна.", kb=admin_main_kb())
         return
 
     # ── Со-admin'ы ────────────────────────────────────────────────
