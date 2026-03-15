@@ -589,17 +589,15 @@ def handle_start(msg, uid: int, admins: set, pool=None):
                 clear_game(_uid)
 
             # Сбрасываем профиль
-            with get_conn() as conn:
-                conn.execute("""
-                    UPDATE users SET
-                        name=NULL, age=NULL, city=NULL, interests='[]',
-                        job=NULL, fear=NULL, pet=NULL,
-                        lang_pair='ru|en', stage=0, msg_count=0,
-                        horror_active=0, stopped=0, muted=0,
-                        ai_mode=0, translate_mode=0
-                    WHERE uid=?
-                """, (_uid,))
-                conn.commit()
+            from database import update_user_field as _upd
+            for field, val in [
+                ("name", None), ("age", None), ("city", None), ("interests", []),
+                ("job", None), ("fear", None), ("pet", None),
+                ("lang_pair", "ru|en"), ("stage", 0), ("msg_count", 0),
+                ("horror_active", 0), ("stopped", 0), ("muted", 0),
+                ("ai_mode", 0), ("translate_mode", 0),
+            ]:
+                _upd(_uid, field, val)
 
             u = get_user(_uid)
             if _uname:
