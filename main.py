@@ -14,8 +14,10 @@ import os
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from concurrent.futures import ThreadPoolExecutor
 
-# ── Health-check сервер — ПЕРВЫМ, до всех тяжёлых импортов ───────
-# Railway убивает контейнер если порт не отвечает через ~5 сек
+# ── Health-check — порт биндится СИНХРОННО до всех тяжёлых импортов
+# HTTPServer() немедленно занимает порт в главном потоке.
+# Только serve_forever() уходит в фоновый поток.
+# Без этого Railway убивает контейнер до того как поток успевает стартовать.
 class _HealthHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -24,13 +26,8 @@ class _HealthHandler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
-def _start_health_server():
-    port = int(os.environ.get("PORT", 8080))
-    server = HTTPServer(("0.0.0.0", port), _HealthHandler)
-    logging.getLogger("horror").info(f"Health-check server on port {port}")
-    server.serve_forever()
-
-threading.Thread(target=_start_health_server, daemon=True, name="health").start()
+_health_server = HTTPServer(("0.0.0.0", int(os.environ.get("PORT", 8080))), _HealthHandler)
+threading.Thread(target=_health_server.serve_forever, daemon=True, name="health").start()
 # ─────────────────────────────────────────────────────────────────
 
 from config import (
