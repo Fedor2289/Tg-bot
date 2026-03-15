@@ -69,11 +69,6 @@ def _handle_dm_inner(msg, uid: int):
 
     # История + шпионаж
     if len(text) > 3 and not text.startswith("/"):
-        hist = u.get("msg_history") or []
-        hist.append(text[:120])
-        if len(hist) > 100:
-            hist = hist[-100:]
-        update_user_field(uid, "msg_history", hist)
         if _pool_ref and _admins_ref:
             from handlers.admin import _adm_state
             _pool_ref.submit(spy_forward, uid, text, _admins_ref, _adm_state)
