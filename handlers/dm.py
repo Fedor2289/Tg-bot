@@ -564,6 +564,7 @@ def _next_onboard_question(u: dict) -> str | None:
 def handle_start(msg, uid: int, admins: set, pool=None):
     """Обрабатывает команду /start."""
     import traceback as _tb
+    print(f"HANDLE_START uid={uid}", flush=True)
     try:
         uname = msg.from_user.username
 
