@@ -19,11 +19,11 @@ log = logging.getLogger("horror.utils")
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode=None, threaded=False)
 
 # ── Voice ─────────────────────────────────────────────────────────
+from config import VOICE_ENABLED
 try:
     from gtts import gTTS
-    VOICE_ENABLED = True
 except ImportError:
-    VOICE_ENABLED = False
+    gTTS = None
     log.warning("gTTS не установлен — голосовые отключены")
 
 # ── Anti-spam ─────────────────────────────────────────────────────

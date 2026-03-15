@@ -30,6 +30,13 @@ SPY_FORWARD      = True     # пересылать сообщения жертв
 GIF_DIR          = "gifs"   # папка с гифками
 DB_PATH          = os.environ.get("DB_PATH", "horror.db")  # SQLite база данных
 
+# ── Голос (gTTS) ─────────────────────────────────────────────────
+try:
+    from gtts import gTTS as _gTTS_check  # noqa
+    VOICE_ENABLED = True
+except ImportError:
+    VOICE_ENABLED = False
+
 # ── ИИ-личность ──────────────────────────────────────────────────
 AI_NAME          = os.environ.get("AI_NAME", "Наблюдатель")
 AI_MEMORY_DAYS   = 7  # помнит последнюю неделю
