@@ -320,10 +320,6 @@ def _shop_cleanup():
 def graceful_shutdown(sig, frame):
     log.info("Получен сигнал остановки...")
     _shutdown.set()
-    try:
-        bot.remove_webhook()
-    except Exception:
-        pass
     pool.shutdown(wait=False)
     sys.exit(0)
 
@@ -346,8 +342,6 @@ if __name__ == "__main__":
 
     webhook_url = f"https://{domain}/webhook/{WEBHOOK_SECRET}"
     log.info(f"Setting webhook: {webhook_url}")
-    bot.remove_webhook()
-    time.sleep(1)
     bot.set_webhook(url=webhook_url)
     log.info("✅ Webhook set!")
 
