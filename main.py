@@ -14,6 +14,25 @@ import os
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from concurrent.futures import ThreadPoolExecutor
 
+# ── Health-check сервер — ПЕРВЫМ, до всех тяжёлых импортов ───────
+# Railway убивает контейнер если порт не отвечает через ~5 сек
+class _HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"OK")
+    def log_message(self, *args):
+        pass
+
+def _start_health_server():
+    port = int(os.environ.get("PORT", 8080))
+    server = HTTPServer(("0.0.0.0", port), _HealthHandler)
+    logging.getLogger("horror").info(f"Health-check server on port {port}")
+    server.serve_forever()
+
+threading.Thread(target=_start_health_server, daemon=True, name="health").start()
+# ─────────────────────────────────────────────────────────────────
+
 from config import (
     BOT_TOKEN, ADMIN_ID, STAGE_SEC, HORROR_DELAY_SEC,
     VOICE_ENABLED, GIF_DIR, validate, log
@@ -346,26 +365,6 @@ def _shop_cleanup():
             pass
 
 
-# ════════════════════════════════════════════════════════════════
-#  HEALTH CHECK (Railway требует HTTP на $PORT)
-# ════════════════════════════════════════════════════════════════
-
-class _HealthHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"OK")
-
-    def log_message(self, *args):
-        pass  # не засорять логи
-
-
-def _start_health_server():
-    port = int(os.environ.get("PORT", 8080))
-    server = HTTPServer(("0.0.0.0", port), _HealthHandler)
-    log.info(f"Health-check server on port {port}")
-    server.serve_forever()
-
 
 # ════════════════════════════════════════════════════════════════
 #  ЗАПУСК
@@ -377,6 +376,7 @@ def graceful_shutdown(sig, frame):
     bot.stop_polling()
     pool.shutdown(wait=False)
     sys.exit(0)
+
 
 
 def run_polling():
@@ -422,9 +422,6 @@ def run_polling():
 
 
 if __name__ == "__main__":
-    # Health-check сервер для Railway (должен быть первым!)
-    threading.Thread(target=_start_health_server, daemon=True, name="health").start()
-
     # Запуск фоновых потоков
     threads = [
         threading.Thread(target=_stage_loop,    daemon=True, name="stage_loop"),
