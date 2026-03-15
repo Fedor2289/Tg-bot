@@ -641,10 +641,8 @@ def handle_start(msg, uid: int, admins: set, pool=None):
             import traceback
             log.error(f"handle_start crashed:\n{traceback.format_exc()}")
 
-    if pool:
-        pool.submit(_do_start)
-    else:
-        threading.Thread(target=_do_start, daemon=True).start()
+    # DEBUG: запускаем синхронно чтобы увидеть ошибку
+    _do_start()
 
 
 import threading
