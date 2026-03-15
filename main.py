@@ -15,9 +15,9 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from concurrent.futures import ThreadPoolExecutor
 
 # ── Health-check — порт биндится СИНХРОННО до всех тяжёлых импортов
-# HTTPServer() немедленно занимает порт в главном потоке.
-# Только serve_forever() уходит в фоновый поток.
-# Без этого Railway убивает контейнер до того как поток успевает стартовать.
+_PORT = int(os.environ.get("PORT", 8080))
+print(f"[HEALTH] Binding to PORT={_PORT}", flush=True)
+
 class _HealthHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -26,8 +26,12 @@ class _HealthHandler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
-_health_server = HTTPServer(("0.0.0.0", int(os.environ.get("PORT", 8080))), _HealthHandler)
-threading.Thread(target=_health_server.serve_forever, daemon=True, name="health").start()
+try:
+    _health_server = HTTPServer(("0.0.0.0", _PORT), _HealthHandler)
+    threading.Thread(target=_health_server.serve_forever, daemon=True, name="health").start()
+    print(f"[HEALTH] Server OK on port {_PORT}", flush=True)
+except Exception as e:
+    print(f"[HEALTH] FAILED to bind port {_PORT}: {e}", flush=True)
 # ─────────────────────────────────────────────────────────────────
 
 from config import (
