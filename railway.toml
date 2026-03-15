@@ -1,0 +1,8 @@
+[deploy]
+# Путь healthcheck — Railway делает GET на этот URL
+healthcheckPath = "/"
+# Таймаут ожидания healthcheck при старте (секунды)
+healthcheckTimeout = 120
+# Перезапускать только при падении (не при SIGTERM от Railway)
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5
