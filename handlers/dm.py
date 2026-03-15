@@ -559,90 +559,71 @@ def _next_onboard_question(u: dict) -> str | None:
     return None
 
 
+
 # ── /start обработчик ─────────────────────────────────────────────
 def handle_start(msg, uid: int, admins: set, pool=None):
     """Обрабатывает команду /start."""
-    import uuid
-    from database import get_conn
-    from horror.engine import start_horror
+    import traceback as _tb
+    try:
+        uname = msg.from_user.username
 
-    uname = msg.from_user.username
+        # Проверка invite-кода
+        invite_code = None
+        if msg.text and len(msg.text.split()) > 1:
+            param = msg.text.split()[1]
+            if param.startswith("inv_"):
+                invite_code = param
 
-    # Проверка invite-кода
-    invite_code = None
-    if msg.text and len(msg.text.split()) > 1:
-        param = msg.text.split()[1]
-        if param.startswith("inv_"):
-            invite_code = param
+        # Создаём пользователя если нет
+        get_user(uid)
 
-    def _do_start(_uid=uid, _uname=uname, _invite=invite_code):
-        try:
-            time.sleep(0.3)
-            # Создаём пользователя если нет
-            get_user(_uid)
+        # Очищаем старые данные
+        from database import cancel_user_attacks
+        cancel_user_attacks(uid)
+        from games.dm_games import has_game, clear_game
+        if has_game(uid):
+            clear_game(uid)
 
-            # Очищаем старые данные
-            from database import cancel_user_attacks
-            cancel_user_attacks(_uid)
-            from games.dm_games import has_game, clear_game
-            if has_game(_uid):
-                clear_game(_uid)
+        # Сбрасываем профиль
+        for field, val in [
+            ("name", None), ("age", None), ("city", None), ("interests", []),
+            ("job", None), ("fear", None), ("pet", None),
+            ("lang_pair", "ru|en"), ("stage", 0), ("msg_count", 0),
+            ("horror_active", 0), ("stopped", 0), ("muted", 0),
+            ("ai_mode", 0), ("translate_mode", 0),
+        ]:
+            update_user_field(uid, field, val)
 
-            # Сбрасываем профиль
-            from database import update_user_field as _upd
-            for field, val in [
-                ("name", None), ("age", None), ("city", None), ("interests", []),
-                ("job", None), ("fear", None), ("pet", None),
-                ("lang_pair", "ru|en"), ("stage", 0), ("msg_count", 0),
-                ("horror_active", 0), ("stopped", 0), ("muted", 0),
-                ("ai_mode", 0), ("translate_mode", 0),
-            ]:
-                _upd(_uid, field, val)
+        if uname:
+            update_user_field(uid, "username", uname)
 
-            u = get_user(_uid)
-            if _uname:
-                update_user_field(_uid, "username", _uname)
+        first_name = msg.from_user.first_name
+        if first_name and len(first_name) >= 2:
+            fn_clean = re.sub(r'[^\w\-]', '', first_name).strip()
+            if fn_clean and fn_clean.isalpha():
+                update_user_field(uid, "name", fn_clean.capitalize())
 
-            # Автоопределение имени из Telegram
-            first_name = msg.from_user.first_name
-            if first_name and len(first_name) >= 2:
-                fn_clean = re.sub(r'[^\w\-]', '', first_name).strip()
-                if fn_clean and fn_clean.isalpha():
-                    update_user_field(_uid, "name", fn_clean.capitalize())
+        from utils import bot as _bot
+        _bot.send_message(
+            uid,
+            "Привет! 🌍 Я бот-переводчик.\n\n"
+            "Напиши любой текст — переведу!\n"
+            "По умолчанию: Русский → Английский\n\n"
+            "Также умею:\n"
+            "🌤 Показывать погоду\n"
+            "🎮 Игры: RPG, истории, квесты, мафия\n"
+            "🤖 ИИ-диалог\n"
+            "🔮 Предсказания, 📖 Факты, 🧠 Викторина\n\n"
+            "Нажми кнопку или напиши текст 😊",
+            reply_markup=main_kb(0)
+        )
 
-            update_user_field(_uid, "stopped", 0)
-            update_user_field(_uid, "muted", 0)
+        if invite_code:
+            from social.friends import process_invite
+            process_invite(uid, invite_code, pool)
 
-            from utils import bot as _bot
-            from keyboards import main_kb as _main_kb
-            try:
-                _bot.send_message(
-                    _uid,
-                    "Привет! 🌍 Я бот-переводчик.\n\n"
-                    "Напиши любой текст — переведу!\n"
-                    "По умолчанию: Русский → Английский\n\n"
-                    "Также умею:\n"
-                    "🌤 Показывать погоду\n"
-                    "🎮 Игры: RPG, истории, квесты, мафия\n"
-                    "🤖 ИИ-диалог\n"
-                    "🔮 Предсказания, 📖 Факты, 🧠 Викторина\n\n"
-                    "Нажми кнопку или напиши текст 😊",
-                    reply_markup=_main_kb(0)
-                )
-                log.error(f"handle_start: send OK uid={_uid}")
-            except Exception as e:
-                log.error(f"handle_start: send FAILED uid={_uid}: {e}")
-
-            # Обрабатываем invite
-            if _invite:
-                from social.friends import process_invite
-                process_invite(_uid, _invite, pool)
-        except Exception:
-            import traceback
-            log.error(f"handle_start crashed:\n{traceback.format_exc()}")
-
-    # DEBUG: запускаем синхронно чтобы увидеть ошибку
-    _do_start()
+    except Exception:
+        log.error(f"handle_start crashed:\n{_tb.format_exc()}")
 
 
 import threading
