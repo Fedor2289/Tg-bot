@@ -136,15 +136,14 @@ def get_user(uid: int) -> dict:
     """Возвращает профиль пользователя. Создаёт если нет."""
     with _lock:
         row = _conn.execute("SELECT * FROM users WHERE uid=?", (uid,)).fetchone()
-        if row:
-            d = dict(row)
-            d["interests"] = json.loads(d.get("interests") or "[]")
-            d["achievements"] = json.loads(d.get("achievements") or "[]")
-            return d
-        # Создаём новый профиль
-        _conn.execute("INSERT OR IGNORE INTO users (uid) VALUES (?)", (uid,))
-        _conn.commit()
-        return get_user(uid)
+        if not row:
+            _conn.execute("INSERT OR IGNORE INTO users (uid) VALUES (?)", (uid,))
+            _conn.commit()
+            row = _conn.execute("SELECT * FROM users WHERE uid=?", (uid,)).fetchone()
+        d = dict(row)
+        d["interests"] = json.loads(d.get("interests") or "[]")
+        d["achievements"] = json.loads(d.get("achievements") or "[]")
+        return d
 
 def save_user(uid: int, data: dict):
     """Сохраняет изменённые поля профиля."""
