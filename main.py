@@ -39,7 +39,7 @@ class _SafePool:
                 fn(*args, **kwargs)
             except Exception:
                 fn_name = getattr(fn, "__name__", str(fn))
-                log.debug(f"pool/{fn_name} crashed:\n{traceback.format_exc()[:400]}")
+                log.error(f"pool/{fn_name} crashed:\n{traceback.format_exc()}")
         return _pool_raw.submit(_wrapped)
     def shutdown(self, **kw):
         return _pool_raw.shutdown(**kw)
