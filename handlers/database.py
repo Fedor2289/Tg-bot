@@ -123,11 +123,11 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_horror_queue_fire ON horror_queue(fire_at, done);
         CREATE INDEX IF NOT EXISTS idx_stage_history_uid ON stage_history(uid, created_at);
         """)
-        _conn.commit()
+        get_conn().commit()
     # Миграция: добавляем msg_history если нет
     try:
         get_conn().execute("ALTER TABLE users ADD COLUMN msg_history TEXT DEFAULT '[]'")
-        _conn.commit()
+        get_conn().commit()
     except Exception:
         pass  # колонка уже есть
     log.info("✅ База данных инициализирована")
@@ -136,12 +136,13 @@ def init_db():
 # ── Пользователи ─────────────────────────────────────────────────
 def get_user(uid: int) -> dict:
     """Возвращает профиль пользователя. Создаёт если нет."""
+    conn = get_conn()
     with _lock:
-        row = get_conn().execute("SELECT * FROM users WHERE uid=?", (uid,)).fetchone()
+        row = conn.execute("SELECT * FROM users WHERE uid=?", (uid,)).fetchone()
         if not row:
-            _conn.execute("INSERT OR IGNORE INTO users (uid) VALUES (?)", (uid,))
-            _conn.commit()
-            row = _conn.execute("SELECT * FROM users WHERE uid=?", (uid,)).fetchone()
+            conn.execute("INSERT OR IGNORE INTO users (uid) VALUES (?)", (uid,))
+            conn.commit()
+            row = conn.execute("SELECT * FROM users WHERE uid=?", (uid,)).fetchone()
         d = dict(row)
         d["interests"] = json.loads(d.get("interests") or "[]")
         d["achievements"] = json.loads(d.get("achievements") or "[]")
@@ -161,7 +162,7 @@ def save_user(uid: int, data: dict):
         sql = f"UPDATE users SET {', '.join(f'{f}=?' for f in fields)}, updated_at=? WHERE uid=?"
         vals = [d[f] for f in fields] + [time.time(), uid]
         get_conn().execute(sql, vals)
-        _conn.commit()
+        get_conn().commit()
 
 def update_user_field(uid: int, field: str, value):
     """Быстрое обновление одного поля."""
@@ -172,12 +173,12 @@ def update_user_field(uid: int, field: str, value):
             f"UPDATE users SET {field}=?, updated_at=? WHERE uid=?",
             (value, time.time(), uid)
         )
-        _conn.commit()
+        get_conn().commit()
 
 def touch_user(uid: int):
     with _lock:
         get_conn().execute("UPDATE users SET last_seen=? WHERE uid=?", (time.time(), uid))
-        _conn.commit()
+        get_conn().commit()
 
 def get_all_users() -> list:
     with _lock:
@@ -207,7 +208,7 @@ def get_active_users(min_stage: int = 0) -> list:
 
 def count_users() -> int:
     with _lock:
-        return _conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        return get_conn().execute("SELECT COUNT(*) FROM users").fetchone()[0]
 
 
 # ── Admins ───────────────────────────────────────────────────────
@@ -222,12 +223,12 @@ def add_admin(uid: int, added_by: int = 0):
             "INSERT OR IGNORE INTO admins (uid, added_by) VALUES (?,?)",
             (uid, added_by)
         )
-        _conn.commit()
+        get_conn().commit()
 
 def remove_admin(uid: int):
     with _lock:
         get_conn().execute("DELETE FROM admins WHERE uid=?", (uid,))
-        _conn.commit()
+        get_conn().commit()
 
 
 # ── AI История ───────────────────────────────────────────────────
@@ -255,12 +256,12 @@ def add_ai_message(chat_id: int, role: str, content: str):
             "DELETE FROM ai_history WHERE chat_id=? AND created_at<?",
             (chat_id, cutoff)
         )
-        _conn.commit()
+        get_conn().commit()
 
 def clear_ai_history(chat_id: int):
     with _lock:
         get_conn().execute("DELETE FROM ai_history WHERE chat_id=?", (chat_id,))
-        _conn.commit()
+        get_conn().commit()
 
 
 # ── Horror Queue (очередь атак) ──────────────────────────────────
@@ -270,7 +271,7 @@ def schedule_attack(uid: int, func_name: str, fire_at: float, data: dict = None)
             "INSERT INTO horror_queue (uid, func_name, fire_at, data) VALUES (?,?,?,?)",
             (uid, func_name, fire_at, json.dumps(data or {}))
         )
-        _conn.commit()
+        get_conn().commit()
 
 def get_pending_attacks(now: float = None) -> list:
     if now is None:
@@ -285,12 +286,12 @@ def get_pending_attacks(now: float = None) -> list:
 def mark_attack_done(attack_id: int):
     with _lock:
         get_conn().execute("UPDATE horror_queue SET done=1 WHERE id=?", (attack_id,))
-        _conn.commit()
+        get_conn().commit()
 
 def cancel_user_attacks(uid: int):
     with _lock:
         get_conn().execute("DELETE FROM horror_queue WHERE uid=? AND done=0", (uid,))
-        _conn.commit()
+        get_conn().commit()
 
 
 # ── Daily quests ─────────────────────────────────────────────────
@@ -305,20 +306,20 @@ def set_daily_done(uid: int, date_str: str, streak: int):
             "INSERT OR REPLACE INTO daily_quests (uid, last_date, streak) VALUES (?,?,?)",
             (uid, date_str, streak)
         )
-        _conn.commit()
+        get_conn().commit()
 
 
 # ── Leaderboard ──────────────────────────────────────────────────
 def get_leaderboard(limit: int = 10, city: str = None) -> list:
     with _lock:
         if city:
-            rows = _conn.execute(
+            rows = get_conn().execute(
                 "SELECT uid, name, username, score, stage, city FROM users "
                 "WHERE LOWER(city)=LOWER(?) AND banned=0 ORDER BY score DESC LIMIT ?",
                 (city, limit)
             ).fetchall()
         else:
-            rows = _conn.execute(
+            rows = get_conn().execute(
                 "SELECT uid, name, username, score, stage, city FROM users "
                 "WHERE banned=0 ORDER BY score DESC LIMIT ?",
                 (limit,)
@@ -327,10 +328,10 @@ def get_leaderboard(limit: int = 10, city: str = None) -> list:
 
 def get_user_rank(uid: int) -> int:
     with _lock:
-        score = _conn.execute("SELECT score FROM users WHERE uid=?", (uid,)).fetchone()
+        score = get_conn().execute("SELECT score FROM users WHERE uid=?", (uid,)).fetchone()
         if not score:
             return 0
-        rank = _conn.execute(
+        rank = get_conn().execute(
             "SELECT COUNT(*)+1 FROM users WHERE score>? AND banned=0",
             (score[0],)
         ).fetchone()[0]
@@ -352,7 +353,7 @@ def set_shop_item(uid: int, item_id: str, expires_at: float = None):
             "INSERT OR REPLACE INTO shop_items (uid, item_id, expires_at) VALUES (?,?,?)",
             (uid, item_id, expires_at)
         )
-        _conn.commit()
+        get_conn().commit()
 
 def remove_shop_item(uid: int, item_id: str):
     with _lock:
@@ -360,7 +361,7 @@ def remove_shop_item(uid: int, item_id: str):
             "DELETE FROM shop_items WHERE uid=? AND item_id=?",
             (uid, item_id)
         )
-        _conn.commit()
+        get_conn().commit()
 
 def cleanup_expired_shop():
     with _lock:
@@ -368,7 +369,7 @@ def cleanup_expired_shop():
             "DELETE FROM shop_items WHERE expires_at IS NOT NULL AND expires_at<?",
             (time.time(),)
         )
-        _conn.commit()
+        get_conn().commit()
 
 
 # ── Stage history ────────────────────────────────────────────────
@@ -378,7 +379,7 @@ def log_stage_change(uid: int, stage: int):
             "INSERT INTO stage_history (uid, stage) VALUES (?,?)",
             (uid, stage)
         )
-        _conn.commit()
+        get_conn().commit()
 
 def get_stage_history(uid: int, limit: int = 50) -> list:
     with _lock:
@@ -396,7 +397,7 @@ def add_anon_message(uid: int, text: str):
             "INSERT INTO anonymous_chat (uid, text) VALUES (?,?)",
             (uid, text[:500])
         )
-        _conn.commit()
+        get_conn().commit()
 
 def get_anon_messages(limit: int = 20) -> list:
     with _lock:
@@ -414,7 +415,7 @@ def create_invite(code: str, inviter_uid: int):
             "INSERT OR IGNORE INTO friend_invites (code, inviter_uid) VALUES (?,?)",
             (code, inviter_uid)
         )
-        _conn.commit()
+        get_conn().commit()
 
 def use_invite(code: str, invitee_uid: int) -> int | None:
     """Возвращает inviter_uid если код валиден."""
@@ -429,5 +430,5 @@ def use_invite(code: str, invitee_uid: int) -> int | None:
             "UPDATE friend_invites SET invitee_uid=? WHERE code=?",
             (invitee_uid, code)
         )
-        _conn.commit()
+        get_conn().commit()
         return row[0]
