@@ -613,17 +613,25 @@ def handle_start(msg, uid: int, admins: set, pool=None):
             update_user_field(_uid, "stopped", 0)
             update_user_field(_uid, "muted", 0)
 
-            send(_uid,
-                "Привет! 🌍 Я бот-переводчик.\n\n"
-                "Напиши любой текст — переведу!\n"
-                "По умолчанию: Русский → Английский\n\n"
-                "Также умею:\n"
-                "🌤 Показывать погоду\n"
-                "🎮 Игры: RPG, истории, квесты, мафия\n"
-                "🤖 ИИ-диалог\n"
-                "🔮 Предсказания, 📖 Факты, 🧠 Викторина\n\n"
-                "Нажми кнопку или напиши текст 😊",
-                kb=main_kb(0))
+            from utils import bot as _bot
+            from keyboards import main_kb as _main_kb
+            try:
+                _bot.send_message(
+                    _uid,
+                    "Привет! 🌍 Я бот-переводчик.\n\n"
+                    "Напиши любой текст — переведу!\n"
+                    "По умолчанию: Русский → Английский\n\n"
+                    "Также умею:\n"
+                    "🌤 Показывать погоду\n"
+                    "🎮 Игры: RPG, истории, квесты, мафия\n"
+                    "🤖 ИИ-диалог\n"
+                    "🔮 Предсказания, 📖 Факты, 🧠 Викторина\n\n"
+                    "Нажми кнопку или напиши текст 😊",
+                    reply_markup=_main_kb(0)
+                )
+                log.error(f"handle_start: send OK uid={_uid}")
+            except Exception as e:
+                log.error(f"handle_start: send FAILED uid={_uid}: {e}")
 
             # Обрабатываем invite
             if _invite:
