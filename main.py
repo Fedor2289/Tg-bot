@@ -92,6 +92,10 @@ def on_start(msg):
         bot.send_message(chat_id, "⬆️ Или нажми:", reply_markup=ik)
         return
     from handlers.dm import handle_start
+    try:
+        bot.send_message(uid, "⏳ Запуск...")
+    except Exception as e:
+        log.error(f"on_start send test failed: {e}")
     handle_start(msg, uid, admins, pool)
 
 @bot.message_handler(commands=["stop"])
