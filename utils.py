@@ -61,7 +61,7 @@ def _safe_call(fn, *args, retries=3, **kwargs):
                 if attempt < retries - 1:
                     time.sleep(2)
         except Exception as e:
-            log.debug(f"_safe_call error: {e}")
+            log.error(f"_safe_call error attempt={attempt}: {e}")
             if attempt < retries - 1:
                 time.sleep(1)
     return None
@@ -75,7 +75,7 @@ def send(uid: int, text: str, kb=None) -> None:
         else:
             _safe_call(bot.send_message, uid, text)
     except Exception as e:
-        log.debug(f"send() uid={uid}: {e}")
+        log.error(f"send() uid={uid}: {e}")
 
 
 def send_group(chat_id: int, text: str, kb=None) -> None:
