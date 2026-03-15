@@ -3,3 +3,4 @@ requests==2.31.0
 gTTS==2.5.1
 groq>=0.4.0
 cerebras-cloud-sdk>=1.0.0
+flask>=3.0.0
