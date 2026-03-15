@@ -12,6 +12,7 @@ from ai.client import ask, ask_host
 from horror.engine import check_achievement
 from config import GROUP_AUTO_VOICE
 from keyboards import maf_lobby_kb, maf_vote_kb, maf_night_kb
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 log = logging.getLogger("horror.mafia")
 
