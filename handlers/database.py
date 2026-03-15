@@ -9,22 +9,24 @@ import logging
 from config import DB_PATH
 
 log = logging.getLogger("horror.db")
-_lock = threading.Lock()
+_lock = threading.RLock()
+_local = threading.local()
 
 # ── Подключение ───────────────────────────────────────────────────
 def get_conn():
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+    if not hasattr(_local, 'conn') or _local.conn is None:
+        _local.conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=30)
+        _local.conn.row_factory = sqlite3.Row
+        _local.conn.execute("PRAGMA journal_mode=WAL")
+        _local.conn.execute("PRAGMA foreign_keys=ON")
+    return _local.conn
 
 _conn = get_conn()
 
 def init_db():
     """Создаёт все таблицы если их нет."""
     with _lock:
-        c = _conn
+        c = get_conn()
         c.executescript("""
         CREATE TABLE IF NOT EXISTS users (
             uid         INTEGER PRIMARY KEY,
@@ -124,7 +126,7 @@ def init_db():
         _conn.commit()
     # Миграция: добавляем msg_history если нет
     try:
-        _conn.execute("ALTER TABLE users ADD COLUMN msg_history TEXT DEFAULT '[]'")
+        get_conn().execute("ALTER TABLE users ADD COLUMN msg_history TEXT DEFAULT '[]'")
         _conn.commit()
     except Exception:
         pass  # колонка уже есть
@@ -135,7 +137,7 @@ def init_db():
 def get_user(uid: int) -> dict:
     """Возвращает профиль пользователя. Создаёт если нет."""
     with _lock:
-        row = _conn.execute("SELECT * FROM users WHERE uid=?", (uid,)).fetchone()
+        row = get_conn().execute("SELECT * FROM users WHERE uid=?", (uid,)).fetchone()
         if not row:
             _conn.execute("INSERT OR IGNORE INTO users (uid) VALUES (?)", (uid,))
             _conn.commit()
@@ -158,7 +160,7 @@ def save_user(uid: int, data: dict):
         fields = [k for k in d if k != "uid"]
         sql = f"UPDATE users SET {', '.join(f'{f}=?' for f in fields)}, updated_at=? WHERE uid=?"
         vals = [d[f] for f in fields] + [time.time(), uid]
-        _conn.execute(sql, vals)
+        get_conn().execute(sql, vals)
         _conn.commit()
 
 def update_user_field(uid: int, field: str, value):
@@ -166,7 +168,7 @@ def update_user_field(uid: int, field: str, value):
     with _lock:
         if isinstance(value, (list, dict)):
             value = json.dumps(value, ensure_ascii=False)
-        _conn.execute(
+        get_conn().execute(
             f"UPDATE users SET {field}=?, updated_at=? WHERE uid=?",
             (value, time.time(), uid)
         )
@@ -174,12 +176,12 @@ def update_user_field(uid: int, field: str, value):
 
 def touch_user(uid: int):
     with _lock:
-        _conn.execute("UPDATE users SET last_seen=? WHERE uid=?", (time.time(), uid))
+        get_conn().execute("UPDATE users SET last_seen=? WHERE uid=?", (time.time(), uid))
         _conn.commit()
 
 def get_all_users() -> list:
     with _lock:
-        rows = _conn.execute("SELECT * FROM users").fetchall()
+        rows = get_conn().execute("SELECT * FROM users").fetchall()
         result = []
         for row in rows:
             d = dict(row)
@@ -191,7 +193,7 @@ def get_all_users() -> list:
 def get_active_users(min_stage: int = 0) -> list:
     """Активные жертвы (не stopped, не muted)."""
     with _lock:
-        rows = _conn.execute(
+        rows = get_conn().execute(
             "SELECT * FROM users WHERE stopped=0 AND muted=0 AND horror_active=1 AND stage>=?",
             (min_stage,)
         ).fetchall()
@@ -211,12 +213,12 @@ def count_users() -> int:
 # ── Admins ───────────────────────────────────────────────────────
 def get_admins() -> set:
     with _lock:
-        rows = _conn.execute("SELECT uid FROM admins").fetchall()
+        rows = get_conn().execute("SELECT uid FROM admins").fetchall()
         return {row[0] for row in rows}
 
 def add_admin(uid: int, added_by: int = 0):
     with _lock:
-        _conn.execute(
+        get_conn().execute(
             "INSERT OR IGNORE INTO admins (uid, added_by) VALUES (?,?)",
             (uid, added_by)
         )
@@ -224,7 +226,7 @@ def add_admin(uid: int, added_by: int = 0):
 
 def remove_admin(uid: int):
     with _lock:
-        _conn.execute("DELETE FROM admins WHERE uid=?", (uid,))
+        get_conn().execute("DELETE FROM admins WHERE uid=?", (uid,))
         _conn.commit()
 
 
@@ -235,7 +237,7 @@ AI_HIST_TTL = 3600 * 24 * 7  # 7 дней
 def get_ai_history(chat_id: int, limit: int = AI_HIST_MAX) -> list:
     with _lock:
         cutoff = time.time() - AI_HIST_TTL
-        rows = _conn.execute(
+        rows = get_conn().execute(
             "SELECT role, content FROM ai_history WHERE chat_id=? AND created_at>? ORDER BY created_at DESC LIMIT ?",
             (chat_id, cutoff, limit)
         ).fetchall()
@@ -243,13 +245,13 @@ def get_ai_history(chat_id: int, limit: int = AI_HIST_MAX) -> list:
 
 def add_ai_message(chat_id: int, role: str, content: str):
     with _lock:
-        _conn.execute(
+        get_conn().execute(
             "INSERT INTO ai_history (chat_id, role, content) VALUES (?,?,?)",
             (chat_id, role, content)
         )
         # Чистим старые (>TTL или >MAX*2)
         cutoff = time.time() - AI_HIST_TTL
-        _conn.execute(
+        get_conn().execute(
             "DELETE FROM ai_history WHERE chat_id=? AND created_at<?",
             (chat_id, cutoff)
         )
@@ -257,14 +259,14 @@ def add_ai_message(chat_id: int, role: str, content: str):
 
 def clear_ai_history(chat_id: int):
     with _lock:
-        _conn.execute("DELETE FROM ai_history WHERE chat_id=?", (chat_id,))
+        get_conn().execute("DELETE FROM ai_history WHERE chat_id=?", (chat_id,))
         _conn.commit()
 
 
 # ── Horror Queue (очередь атак) ──────────────────────────────────
 def schedule_attack(uid: int, func_name: str, fire_at: float, data: dict = None):
     with _lock:
-        _conn.execute(
+        get_conn().execute(
             "INSERT INTO horror_queue (uid, func_name, fire_at, data) VALUES (?,?,?,?)",
             (uid, func_name, fire_at, json.dumps(data or {}))
         )
@@ -274,7 +276,7 @@ def get_pending_attacks(now: float = None) -> list:
     if now is None:
         now = time.time()
     with _lock:
-        rows = _conn.execute(
+        rows = get_conn().execute(
             "SELECT * FROM horror_queue WHERE fire_at<=? AND done=0 ORDER BY fire_at",
             (now,)
         ).fetchall()
@@ -282,24 +284,24 @@ def get_pending_attacks(now: float = None) -> list:
 
 def mark_attack_done(attack_id: int):
     with _lock:
-        _conn.execute("UPDATE horror_queue SET done=1 WHERE id=?", (attack_id,))
+        get_conn().execute("UPDATE horror_queue SET done=1 WHERE id=?", (attack_id,))
         _conn.commit()
 
 def cancel_user_attacks(uid: int):
     with _lock:
-        _conn.execute("DELETE FROM horror_queue WHERE uid=? AND done=0", (uid,))
+        get_conn().execute("DELETE FROM horror_queue WHERE uid=? AND done=0", (uid,))
         _conn.commit()
 
 
 # ── Daily quests ─────────────────────────────────────────────────
 def get_daily_info(uid: int) -> dict:
     with _lock:
-        row = _conn.execute("SELECT * FROM daily_quests WHERE uid=?", (uid,)).fetchone()
+        row = get_conn().execute("SELECT * FROM daily_quests WHERE uid=?", (uid,)).fetchone()
         return dict(row) if row else {"uid": uid, "last_date": None, "streak": 0}
 
 def set_daily_done(uid: int, date_str: str, streak: int):
     with _lock:
-        _conn.execute(
+        get_conn().execute(
             "INSERT OR REPLACE INTO daily_quests (uid, last_date, streak) VALUES (?,?,?)",
             (uid, date_str, streak)
         )
@@ -338,7 +340,7 @@ def get_user_rank(uid: int) -> int:
 # ── Shop ─────────────────────────────────────────────────────────
 def get_shop_item(uid: int, item_id: str) -> dict | None:
     with _lock:
-        row = _conn.execute(
+        row = get_conn().execute(
             "SELECT * FROM shop_items WHERE uid=? AND item_id=?",
             (uid, item_id)
         ).fetchone()
@@ -346,7 +348,7 @@ def get_shop_item(uid: int, item_id: str) -> dict | None:
 
 def set_shop_item(uid: int, item_id: str, expires_at: float = None):
     with _lock:
-        _conn.execute(
+        get_conn().execute(
             "INSERT OR REPLACE INTO shop_items (uid, item_id, expires_at) VALUES (?,?,?)",
             (uid, item_id, expires_at)
         )
@@ -354,7 +356,7 @@ def set_shop_item(uid: int, item_id: str, expires_at: float = None):
 
 def remove_shop_item(uid: int, item_id: str):
     with _lock:
-        _conn.execute(
+        get_conn().execute(
             "DELETE FROM shop_items WHERE uid=? AND item_id=?",
             (uid, item_id)
         )
@@ -362,7 +364,7 @@ def remove_shop_item(uid: int, item_id: str):
 
 def cleanup_expired_shop():
     with _lock:
-        _conn.execute(
+        get_conn().execute(
             "DELETE FROM shop_items WHERE expires_at IS NOT NULL AND expires_at<?",
             (time.time(),)
         )
@@ -372,7 +374,7 @@ def cleanup_expired_shop():
 # ── Stage history ────────────────────────────────────────────────
 def log_stage_change(uid: int, stage: int):
     with _lock:
-        _conn.execute(
+        get_conn().execute(
             "INSERT INTO stage_history (uid, stage) VALUES (?,?)",
             (uid, stage)
         )
@@ -380,7 +382,7 @@ def log_stage_change(uid: int, stage: int):
 
 def get_stage_history(uid: int, limit: int = 50) -> list:
     with _lock:
-        rows = _conn.execute(
+        rows = get_conn().execute(
             "SELECT stage, created_at FROM stage_history WHERE uid=? ORDER BY created_at DESC LIMIT ?",
             (uid, limit)
         ).fetchall()
@@ -390,7 +392,7 @@ def get_stage_history(uid: int, limit: int = 50) -> list:
 # ── Anonymous chat ────────────────────────────────────────────────
 def add_anon_message(uid: int, text: str):
     with _lock:
-        _conn.execute(
+        get_conn().execute(
             "INSERT INTO anonymous_chat (uid, text) VALUES (?,?)",
             (uid, text[:500])
         )
@@ -398,7 +400,7 @@ def add_anon_message(uid: int, text: str):
 
 def get_anon_messages(limit: int = 20) -> list:
     with _lock:
-        rows = _conn.execute(
+        rows = get_conn().execute(
             "SELECT uid, text, created_at FROM anonymous_chat ORDER BY created_at DESC LIMIT ?",
             (limit,)
         ).fetchall()
@@ -408,7 +410,7 @@ def get_anon_messages(limit: int = 20) -> list:
 # ── Friend invites ────────────────────────────────────────────────
 def create_invite(code: str, inviter_uid: int):
     with _lock:
-        _conn.execute(
+        get_conn().execute(
             "INSERT OR IGNORE INTO friend_invites (code, inviter_uid) VALUES (?,?)",
             (code, inviter_uid)
         )
@@ -417,13 +419,13 @@ def create_invite(code: str, inviter_uid: int):
 def use_invite(code: str, invitee_uid: int) -> int | None:
     """Возвращает inviter_uid если код валиден."""
     with _lock:
-        row = _conn.execute(
+        row = get_conn().execute(
             "SELECT inviter_uid FROM friend_invites WHERE code=? AND invitee_uid IS NULL",
             (code,)
         ).fetchone()
         if not row:
             return None
-        _conn.execute(
+        get_conn().execute(
             "UPDATE friend_invites SET invitee_uid=? WHERE code=?",
             (invitee_uid, code)
         )
