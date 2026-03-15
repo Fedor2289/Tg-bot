@@ -241,8 +241,16 @@ def webhook(secret):
     if request.headers.get("content-type") != "application/json":
         abort(403)
     try:
-        update = telebot.types.Update.de_json(request.get_data().decode("utf-8"))
-        bot.process_new_updates([update])
+        data = request.get_data().decode("utf-8")
+        # Обрабатываем в пуле — Flask сразу возвращает 200 OK
+        # Без этого Telegram получает Read timeout и считает что бот упал
+        def _process():
+            try:
+                update = telebot.types.Update.de_json(data)
+                bot.process_new_updates([update])
+            except Exception:
+                log.error(f"webhook process error:\n{traceback.format_exc()}")
+        pool.submit(_process)
     except Exception:
         log.error(f"webhook error:\n{traceback.format_exc()}")
     return "OK", 200
