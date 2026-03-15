@@ -361,8 +361,7 @@ def _handle_commands(msg, uid: int, text: str, tl: str, u: dict, stage: int, kb)
 
     # ── Магазин ───────────────────────────────────────────────────
     if text == "🛒 Магазин":
-        from utils import bot as _bot
-        _bot.send_message(uid, get_shop_text(uid), reply_markup=shop_kb(uid))
+        send(uid, get_shop_text(uid), kb=shop_kb(uid))
         return
 
     # ── Текстовые команды ─────────────────────────────────────────
@@ -373,8 +372,7 @@ def _handle_commands(msg, uid: int, text: str, tl: str, u: dict, stage: int, kb)
         send(uid, msg_out, kb=kb); return
 
     if tl in ("магазин", "shop"):
-        from utils import bot as _bot
-        _bot.send_message(uid, get_shop_text(uid), reply_markup=shop_kb(uid))
+        send(uid, get_shop_text(uid), kb=shop_kb(uid))
         return
 
     if tl in ("ачивки", "достижения", "achievements"):
@@ -566,26 +564,23 @@ def handle_start(msg, uid: int, admins: set, pool=None):
     import traceback as _tb
     print(f"HANDLE_START uid={uid}", flush=True)
     try:
+        print("S1", flush=True)
         uname = msg.from_user.username
-
-        # Проверка invite-кода
         invite_code = None
         if msg.text and len(msg.text.split()) > 1:
             param = msg.text.split()[1]
             if param.startswith("inv_"):
                 invite_code = param
-
-        # Создаём пользователя если нет
+        print("S2", flush=True)
         get_user(uid)
-
-        # Очищаем старые данные
+        print("S3", flush=True)
         from database import cancel_user_attacks
         cancel_user_attacks(uid)
+        print("S4", flush=True)
         from games.dm_games import has_game, clear_game
         if has_game(uid):
             clear_game(uid)
-
-        # Сбрасываем профиль
+        print("S5", flush=True)
         for field, val in [
             ("name", None), ("age", None), ("city", None), ("interests", []),
             ("job", None), ("fear", None), ("pet", None),
@@ -594,18 +589,20 @@ def handle_start(msg, uid: int, admins: set, pool=None):
             ("ai_mode", 0), ("translate_mode", 0),
         ]:
             update_user_field(uid, field, val)
-
+        print("S6", flush=True)
         if uname:
             update_user_field(uid, "username", uname)
-
         first_name = msg.from_user.first_name
         if first_name and len(first_name) >= 2:
             fn_clean = re.sub(r'[^\w\-]', '', first_name).strip()
             if fn_clean and fn_clean.isalpha():
                 update_user_field(uid, "name", fn_clean.capitalize())
+        print("S7", flush=True)
 
         from utils import bot as _bot
-        _bot.send_message(
+        print("BEFORE SEND", flush=True)
+        try:
+            result = _bot.send_message(
             uid,
             "Привет! 🌍 Я бот-переводчик.\n\n"
             "Напиши любой текст — переведу!\n"
@@ -617,7 +614,12 @@ def handle_start(msg, uid: int, admins: set, pool=None):
             "🔮 Предсказания, 📖 Факты, 🧠 Викторина\n\n"
             "Нажми кнопку или напиши текст 😊",
             reply_markup=main_kb(0)
-        )
+            )
+            print(f"SEND OK result={result}", flush=True)
+        except Exception as send_err:
+            print(f"SEND FAILED: {send_err}", flush=True)
+            import traceback
+            print(traceback.format_exc(), flush=True)
 
         if invite_code:
             from social.friends import process_invite
