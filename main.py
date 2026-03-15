@@ -357,6 +357,7 @@ def graceful_shutdown(sig, frame):
 
 
 def run_polling():
+    from telebot.apihelper import ApiTelegramException
     backoff = 5
     while not _shutdown.is_set():
         try:
@@ -365,8 +366,26 @@ def run_polling():
                 timeout=30,
                 long_polling_timeout=30,
                 allowed_updates=["message", "callback_query", "my_chat_member"],
+                logger_level=None,   # подавляем дублирующиеся ошибки внутри telebot
             )
             backoff = 5
+        except ApiTelegramException as e:
+            if e.error_code == 401:
+                # Невалидный токен или SESSION_REVOKED — ретрай бессмысленен
+                log.critical(
+                    f"❌ BOT TOKEN INVALID (401): {e.description}\n"
+                    f"Причина: либо неверный BOT_TOKEN в Railway, "
+                    f"либо одновременно запущен второй экземпляр бота!\n"
+                    f"Остановка."
+                )
+                _shutdown.set()
+                break
+            log.error(f"Telegram API error {e.error_code}: {e.description}")
+            if _shutdown.is_set():
+                break
+            log.info(f"Restart in {backoff}s...")
+            _shutdown.wait(backoff)
+            backoff = min(backoff * 2, 120)
         except Exception:
             log.error(f"Polling crashed:\n{traceback.format_exc()}")
             if _shutdown.is_set():
